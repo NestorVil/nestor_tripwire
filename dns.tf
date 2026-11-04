@@ -1,7 +1,6 @@
 locals {
   hostnames = {
     laminar = "laminar.${var.domain_name}"
-    api     = "api.${var.domain_name}"
   }
 }
 

@@ -1,9 +1,4 @@
 output "laminar_url" {
-  description = "Laminar dashboard."
+  description = "Laminar dashboard, and the SDK base_url: HTTP on 443, gRPC on 8443 (the SDK defaults)."
   value       = local.laminar_url
-}
-
-output "sdk_base_url" {
-  description = "Base URL for Laminar SDKs."
-  value       = "https://${local.hostnames.api}"
 }

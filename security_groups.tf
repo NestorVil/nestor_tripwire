@@ -40,6 +40,7 @@ locals {
   internal_rules = {
     frontend_from_alb           = { target = "frontend", source = "alb", port = 5667, description = "Dashboard from ALB" }
     app_server_from_alb         = { target = "app_server", source = "alb", port = 8000, description = "SDK and SQL API from ALB" }
+    grpc_from_alb               = { target = "app_server", source = "alb", port = 8001, description = "SDK gRPC from ALB" }
     app_server_from_frontend    = { target = "app_server", source = "frontend", port = 8000, description = "Internal API from frontend" }
     realtime_from_frontend      = { target = "app_server", source = "frontend", port = 8002, description = "Realtime SSE from frontend" }
     clickhouse_from_app_server  = { target = "data", source = "app_server", port = 8123, description = "ClickHouse from app-server" }
@@ -76,6 +77,18 @@ resource "aws_vpc_security_group_ingress_rule" "alb_https" {
   to_port           = 443
   cidr_ipv4         = each.value
 }
+
+resource "aws_vpc_security_group_ingress_rule" "alb_grpc" {
+  for_each = toset(var.allowed_cidrs)
+
+  security_group_id = aws_security_group.alb.id
+  description       = "SDK gRPC from allowed IP"
+  ip_protocol       = "tcp"
+  from_port         = 8443
+  to_port           = 8443
+  cidr_ipv4         = each.value
+}
+
 
 
 resource "aws_vpc_security_group_ingress_rule" "internal" {

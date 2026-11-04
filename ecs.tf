@@ -109,7 +109,8 @@ resource "aws_ecs_task_definition" "app_server" {
     environment = [for name, value in local.app_server_environment : { name = name, value = value }]
     secrets = [for name, key in local.app_server_secrets : {
       name      = name
-      valueFrom = "${aws_secretsmanager_secret.laminar.arn}:${key}::"
+      valueFrom = "${aws_secretsmanager_secret_version.laminar.secret_arn}:${key}::"
+
     }]
     logConfiguration = {
       logDriver = "awslogs"
@@ -177,6 +178,13 @@ resource "aws_ecs_service" "app_server" {
     container_port   = 8000
   }
 
+  load_balancer {
+    target_group_arn = aws_lb_target_group.app_server_grpc.arn
+    container_name   = "app-server"
+    container_port   = 8001
+  }
+
+
   service_registries {
     registry_arn = aws_service_discovery_service.app_server.arn
   }
@@ -186,7 +194,7 @@ resource "aws_ecs_service" "app_server" {
     rollback = true
   }
 
-  depends_on = [aws_lb_listener_rule.app_server]
+  depends_on = [aws_lb_listener_rule.app_server, aws_lb_listener.grpc]
 }
 
 resource "aws_ecs_service" "frontend" {
@@ -215,5 +223,5 @@ resource "aws_ecs_service" "frontend" {
     rollback = true
   }
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [aws_lb_listener.https]
 }

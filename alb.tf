@@ -78,3 +78,31 @@ resource "aws_lb_listener_rule" "app_server" {
     target_group_arn = aws_lb_target_group.app_server.arn
   }
 }
+
+resource "aws_lb_target_group" "app_server_grpc" {
+  name                 = "${var.name_prefix}-appserver-grpc-tg"
+  port                 = 8001
+  protocol             = "HTTP"
+  protocol_version     = "GRPC"
+  target_type          = "ip"
+  vpc_id               = aws_vpc.main.id
+  deregistration_delay = 30
+
+  health_check {
+    path    = "/AWS.ALB/healthcheck"
+    matcher = "0-99"
+  }
+}
+
+resource "aws_lb_listener" "grpc" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 8443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = data.aws_acm_certificate.wildcard.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_server_grpc.arn
+  }
+}
