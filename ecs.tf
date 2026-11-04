@@ -4,7 +4,7 @@ locals {
     frontend   = "ghcr.io/lmnr-ai/frontend:v0.3.2@sha256:b2e3f7875f28b9794f755a373d80d784dd2044b9f9666a3d8e6ccc8765bf7960"
   }
 
-  laminar_url     = "http://${aws_lb.main.dns_name}"
+  laminar_url     = "https://${local.hostnames.laminar}"
   data_box_ip     = aws_instance.data_box.private_ip
   app_server_host = "app-server.${aws_service_discovery_private_dns_namespace.internal.name}"
 

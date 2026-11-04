@@ -66,6 +66,18 @@ resource "aws_vpc_security_group_ingress_rule" "alb_http" {
   cidr_ipv4         = each.value
 }
 
+resource "aws_vpc_security_group_ingress_rule" "alb_https" {
+  for_each = toset(var.allowed_cidrs)
+
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTPS from allowed IP"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = each.value
+}
+
+
 resource "aws_vpc_security_group_ingress_rule" "internal" {
   for_each = local.internal_rules
 

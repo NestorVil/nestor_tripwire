@@ -18,3 +18,13 @@ variable "allowed_cidrs" {
     error_message = "allowed_cidrs must be a non-empty list of CIDR ranges like \"203.0.113.7/32\"."
   }
 }
+
+variable "domain_name" {
+  description = "Domain whose Route 53 zone and wildcard certificate were created in bootstrap/, e.g. example.com."
+  type        = string
+
+  validation {
+    condition     = can(regex("^([a-z0-9-]+\\.)+[a-z]{2,}$", var.domain_name))
+    error_message = "domain_name must be a domain like example.com."
+  }
+}
