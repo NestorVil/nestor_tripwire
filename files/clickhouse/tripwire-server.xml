@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- Warnings and errors only, to the console (CloudWatch) and a small rotating file -->
+    <logger>
+        <level>warning</level>
+        <console>1</console>
+        <size>100M</size>
+        <count>2</count>
+    </logger>
+    <!-- Laminar's spans table has a projection; without this, ClickHouse refuses DELETE -->
+    <merge_tree>
+        <lightweight_mutation_projection_mode>rebuild</lightweight_mutation_projection_mode>
+    </merge_tree>
+</clickhouse>

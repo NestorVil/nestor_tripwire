@@ -1,0 +1,100 @@
+#!/bin/bash
+# Data box first boot: mount the data disk, write config files, start ClickHouse, Valkey, RabbitMQ and Quickwit
+set -euo pipefail
+
+dnf install -y docker
+
+# Every container logs to CloudWatch, one stream per container name
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<'EOF'
+{
+  "log-driver": "awslogs",
+  "log-opts": {
+    "awslogs-region": "${region}",
+    "awslogs-group": "${log_group}",
+    "tag": "{{.Name}}"
+  }
+}
+EOF
+systemctl enable --now docker
+
+# Terraform attaches the data disk after the instance starts, so wait for it
+data_device="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${data_volume_serial}"
+for attempt in $(seq 1 60); do
+  [ -e "$data_device" ] && break
+  sleep 5
+done
+[ -e "$data_device" ] || { echo "Data disk never appeared" >&2; exit 1; }
+
+# Format only a brand-new disk; an existing filesystem holds data
+if ! blkid "$data_device"; then
+  mkfs -t xfs "$data_device"
+fi
+
+mkdir -p /data
+data_uuid=$(blkid -s UUID -o value "$data_device")
+grep -q "$data_uuid" /etc/fstab || echo "UUID=$data_uuid /data xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+mountpoint -q /data || { echo "/data is not mounted" >&2; exit 1; }
+
+# Passwords come from Secrets Manager; retry in case Terraform is still writing the secret
+secret_json=""
+for attempt in $(seq 1 30); do
+  secret_json=$(aws secretsmanager get-secret-value --region "${region}" --secret-id "${secret_arn}" --query SecretString --output text) && break
+  sleep 10
+done
+[ -n "$secret_json" ] || { echo "Could not read the secret" >&2; exit 1; }
+
+read_secret_key() {
+  printf '%s' "$secret_json" | python3 -c 'import json, sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"
+}
+clickhouse_password=$(read_secret_key CLICKHOUSE_PASSWORD)
+rabbitmq_password=$(read_secret_key RABBITMQ_PASSWORD)
+
+# Config files, embedded by Terraform from files/
+write_config() {
+  echo "$2" | base64 -d > "$1"
+  chmod 644 "$1"
+}
+mkdir -p /opt/laminar/clickhouse /opt/laminar/rabbitmq /opt/laminar/quickwit
+write_config /opt/laminar/clickhouse/lmnr-server.xml '${config_files.clickhouse_lmnr_server}'
+write_config /opt/laminar/clickhouse/lmnr-profiles.xml '${config_files.clickhouse_lmnr_profiles}'
+write_config /opt/laminar/clickhouse/tripwire-server.xml '${config_files.clickhouse_tripwire_server}'
+write_config /opt/laminar/clickhouse/tripwire-profiles.xml '${config_files.clickhouse_tripwire_profiles}'
+write_config /opt/laminar/rabbitmq/20-tripwire.conf '${config_files.rabbitmq}'
+write_config /opt/laminar/quickwit/quickwit.yaml '${config_files.quickwit}'
+
+docker run -d --name clickhouse --restart unless-stopped \
+  -p 8123:8123 \
+  --cap-add SYS_NICE --cap-add NET_ADMIN --cap-add IPC_LOCK \
+  --ulimit nofile=262144:262144 \
+  -e CLICKHOUSE_USER=ch_user \
+  -e CLICKHOUSE_PASSWORD="$clickhouse_password" \
+  -v /data/clickhouse:/var/lib/clickhouse \
+  -v /opt/laminar/clickhouse/lmnr-server.xml:/etc/clickhouse-server/config.d/lmnr.xml:ro \
+  -v /opt/laminar/clickhouse/tripwire-server.xml:/etc/clickhouse-server/config.d/tripwire.xml:ro \
+  -v /opt/laminar/clickhouse/lmnr-profiles.xml:/etc/clickhouse-server/users.d/lmnr.xml:ro \
+  -v /opt/laminar/clickhouse/tripwire-profiles.xml:/etc/clickhouse-server/users.d/tripwire.xml:ro \
+  "${images.clickhouse}"
+
+docker run -d --name valkey --restart unless-stopped \
+  -p 6379:6379 \
+  --memory 1g \
+  "${images.valkey}"
+
+docker run -d --name rabbitmq --restart unless-stopped \
+  --hostname rabbitmq \
+  -p 5672:5672 \
+  --memory 1g \
+  -e RABBITMQ_DEFAULT_USER=admin \
+  -e RABBITMQ_DEFAULT_PASS="$rabbitmq_password" \
+  -v /data/rabbitmq:/var/lib/rabbitmq \
+  -v /opt/laminar/rabbitmq/20-tripwire.conf:/etc/rabbitmq/conf.d/20-tripwire.conf:ro \
+  "${images.rabbitmq}"
+
+docker run -d --name quickwit --restart unless-stopped \
+  -p 7280:7280 -p 7281:7281 \
+  --memory 1g \
+  -v /data/quickwit:/quickwit/qwdata \
+  -v /opt/laminar/quickwit/quickwit.yaml:/quickwit/config/quickwit.yaml:ro \
+  "${images.quickwit}" run
