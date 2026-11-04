@@ -1,6 +1,6 @@
 locals {
   hostnames = {
-    laminar = "laminar.${var.domain_name}"
+    laminar = var.laminar_hostname
   }
 }
 
@@ -8,8 +8,8 @@ data "aws_route53_zone" "main" {
   name = var.domain_name
 }
 
-data "aws_acm_certificate" "wildcard" {
-  domain      = "*.${var.domain_name}"
+data "aws_acm_certificate" "laminar" {
+  domain      = var.laminar_hostname
   statuses    = ["ISSUED"]
   most_recent = true
 }
